@@ -1,0 +1,6 @@
+{
+  "name": "Repurpose",
+  "description": "Turn one idea into a week of platform-specific content for X, LinkedIn, TikTok, and Instagram.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
