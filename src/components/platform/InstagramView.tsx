@@ -6,14 +6,15 @@ import {
   RotateCw,
   Save,
   Instagram,
-  Sparkles,
-  Layers,
   ChevronLeft,
   ChevronRight,
+  Sparkles,
+  ChevronDown,
+  ChevronUp,
+  BrainCircuit,
   Hash,
-  Share2,
 } from 'lucide-react';
-import { InstagramContent, InstagramCaption, CarouselSlide } from '../../types';
+import { InstagramContent, CarouselSlide } from '../../types';
 
 interface InstagramViewProps {
   content: InstagramContent;
@@ -21,6 +22,7 @@ interface InstagramViewProps {
   onCopy: (text: string, label: string) => void;
   onRegenerate: () => void;
   onSaveToLibrary: () => void;
+  onOpenVoiceTuner?: () => void;
   isRegenerating?: boolean;
 }
 
@@ -30,15 +32,35 @@ export const InstagramView: React.FC<InstagramViewProps> = ({
   onCopy,
   onRegenerate,
   onSaveToLibrary,
+  onOpenVoiceTuner,
   isRegenerating = false,
 }) => {
-  const [activeTab, setActiveTab] = useState<'carousel' | 'captions' | 'hooks'>('carousel');
-  const [activeSlideIdx, setActiveSlideIdx] = useState(0);
-  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const primaryCaption = content.captions[0] || {
+    caption: 'Caption content...',
+    callToAction: 'Save this post.',
+    suggestedHashtags: ['#buildinpublic', '#founders'],
+  };
 
-  // Edit states for captions
-  const [editingCaptionIdx, setEditingCaptionIdx] = useState<number | null>(null);
-  const [captionDraft, setCaptionDraft] = useState('');
+  const [activeFormat, setActiveFormat] = useState<'caption' | 'carousel'>('caption');
+  const [activeSlideIdx, setActiveSlideIdx] = useState(0);
+
+  const [isEditingCaption, setIsEditingCaption] = useState(false);
+  const [draftCaption, setDraftCaption] = useState(primaryCaption.caption);
+
+  const [isEditingSlide, setIsEditingSlide] = useState(false);
+  const [draftSlideHeadline, setDraftSlideHeadline] = useState('');
+  const [draftSlideBody, setDraftSlideBody] = useState('');
+
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [showSupportingTools, setShowSupportingTools] = useState(false);
+
+  const slides = content.carousel?.slides || [];
+  const currentSlide: CarouselSlide = slides[activeSlideIdx] || {
+    slideNumber: 1,
+    headline: 'Slide Topic',
+    bodyText: 'Slide detail...',
+    visualNote: 'Dark background.',
+  };
 
   const handleCopy = (text: string, label: string, id: string) => {
     onCopy(text, label);
@@ -46,342 +68,430 @@ export const InstagramView: React.FC<InstagramViewProps> = ({
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  const handleSaveCaption = (idx: number) => {
-    const updatedCaptions = [...content.captions];
-    updatedCaptions[idx] = {
-      ...updatedCaptions[idx],
-      caption: captionDraft,
+  const handleSaveCaption = () => {
+    const updated = [...content.captions];
+    updated[0] = {
+      ...updated[0],
+      caption: draftCaption,
     };
     onUpdateContent({
       ...content,
-      captions: updatedCaptions,
+      captions: updated,
     });
-    setEditingCaptionIdx(null);
+    setIsEditingCaption(false);
   };
 
-  const handleCopyCarouselOutline = () => {
-    const outline = content.carousel.slides
+  const handleSaveSlide = () => {
+    const updatedSlides = [...slides];
+    updatedSlides[activeSlideIdx] = {
+      ...currentSlide,
+      headline: draftSlideHeadline,
+      bodyText: draftSlideBody,
+    };
+    onUpdateContent({
+      ...content,
+      carousel: {
+        ...content.carousel,
+        slides: updatedSlides,
+      },
+    });
+    setIsEditingSlide(false);
+  };
+
+  const handleCopyFullCarousel = () => {
+    const text = slides
       .map(
         (s) =>
-          `[SLIDE ${s.slideNumber}: ${s.headline}]\n${s.bodyText}\n(Visual note: ${s.visualNote})`
+          `[Slide ${s.slideNumber}: ${s.headline}]\n${s.bodyText}\n(Visual Note: ${s.visualNote})`
       )
       .join('\n\n---\n\n');
-    handleCopy(outline, 'Full Carousel Outline', 'carousel-full');
+    handleCopy(text, 'Full Carousel Outline', 'full-carousel');
   };
 
   return (
-    <div id="instagram-platform-view" className="space-y-6">
+    <div id="instagram-platform-view" className="space-y-4">
       {/* Platform Header & Quick Controls */}
-      <div className="flex flex-wrap items-center justify-between gap-3 p-4 rounded-xl bg-zinc-900/60 border border-zinc-800">
-        <div className="flex items-center gap-2.5">
-          <div className="w-7 h-7 rounded-lg bg-gradient-to-tr from-amber-500 via-rose-500 to-purple-600 flex items-center justify-center font-bold text-white text-xs">
-            <Instagram className="w-4 h-4" />
+      <div className="flex flex-wrap items-center justify-between gap-3 p-4 rounded-xl bg-[#1d2125] border border-[#262b30]">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-amber-500/20 border border-amber-500/30 flex items-center justify-center font-bold text-amber-400 text-xs">
+            📸
           </div>
           <div>
-            <h3 className="text-sm font-bold text-white">Instagram Content Suite</h3>
-            <p className="text-xs text-zinc-400">
-              1 Visual Carousel Outline • 2 Captions with Hashtags • 5 Cover Hook Ideas
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-bold text-[#f0f2f5]">Instagram Package</h3>
+              <span className="text-[10px] uppercase font-mono font-medium px-2 py-0.5 rounded-full bg-[#16191c] text-emerald-400 border border-[#262b30]">
+                Publish-Ready
+              </span>
+            </div>
+            <p className="text-xs text-[#9ba3af] mt-0.5">
+              1 Complete Caption · {slides.length}-Slide Educational Carousel · Targeted Hashtags
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
-          <button
-            id="instagram-regenerate-btn"
-            onClick={onRegenerate}
-            disabled={isRegenerating}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-zinc-300 bg-zinc-800 hover:bg-zinc-700 hover:text-white transition-colors disabled:opacity-50"
-          >
-            <RotateCw className={`w-3.5 h-3.5 ${isRegenerating ? 'animate-spin text-indigo-400' : ''}`} />
-            <span>Regenerate IG</span>
-          </button>
+          {/* Format selector */}
+          <div className="flex items-center rounded-lg bg-[#16191c] border border-[#262b30] p-0.5 text-xs">
+            <button
+              onClick={() => setActiveFormat('caption')}
+              className={`px-3 py-1.5 rounded-md font-medium transition-colors cursor-pointer ${
+                activeFormat === 'caption'
+                  ? 'bg-[#22272b] text-[#f0f2f5] shadow-xs'
+                  : 'text-[#9ba3af] hover:text-[#f0f2f5]'
+              }`}
+            >
+              Caption
+            </button>
+            <button
+              onClick={() => setActiveFormat('carousel')}
+              className={`px-3 py-1.5 rounded-md font-medium transition-colors cursor-pointer ${
+                activeFormat === 'carousel'
+                  ? 'bg-[#22272b] text-[#f0f2f5] shadow-xs'
+                  : 'text-[#9ba3af] hover:text-[#f0f2f5]'
+              }`}
+            >
+              Carousel ({slides.length} slides)
+            </button>
+          </div>
 
           <button
             id="instagram-save-btn"
             onClick={onSaveToLibrary}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 transition-colors shadow-xs"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-[#cbd2d9] bg-[#22272b] hover:bg-[#282e34] hover:text-[#f0f2f5] border border-[#2e343b] transition-colors cursor-pointer"
           >
             <Save className="w-3.5 h-3.5" />
-            <span>Save to Library</span>
+            <span>Save</span>
+          </button>
+
+          {onOpenVoiceTuner && (
+            <button
+              id="instagram-tune-voice-btn"
+              onClick={onOpenVoiceTuner}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-[#cbd2d9] bg-[#22272b] hover:bg-[#282e34] hover:text-[#f0f2f5] border border-[#2e343b] transition-colors cursor-pointer"
+              title="Tune voice feedback"
+            >
+              <BrainCircuit className="w-3.5 h-3.5 text-emerald-400" />
+              <span className="hidden sm:inline">Tune Voice</span>
+            </button>
+          )}
+
+          <button
+            id="instagram-regenerate-btn"
+            onClick={onRegenerate}
+            disabled={isRegenerating}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-[#cbd2d9] bg-[#22272b] hover:bg-[#282e34] hover:text-[#f0f2f5] border border-[#2e343b] transition-colors disabled:opacity-50 cursor-pointer"
+          >
+            <RotateCw className={`w-3.5 h-3.5 ${isRegenerating ? 'animate-spin text-emerald-400' : ''}`} />
+            <span>Regenerate</span>
           </button>
         </div>
       </div>
 
-      {/* Sub-tabs */}
-      <div className="flex items-center gap-2 border-b border-zinc-800/80 pb-2">
-        <button
-          id="ig-tab-carousel"
-          onClick={() => setActiveTab('carousel')}
-          className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold transition-all ${
-            activeTab === 'carousel'
-              ? 'bg-zinc-800 text-white border border-zinc-700'
-              : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900'
-          }`}
-        >
-          <Layers className="w-3.5 h-3.5 text-purple-400" />
-          <span>Carousel Outline ({content.carousel.slides.length} Slides)</span>
-        </button>
-
-        <button
-          id="ig-tab-captions"
-          onClick={() => setActiveTab('captions')}
-          className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold transition-all ${
-            activeTab === 'captions'
-              ? 'bg-zinc-800 text-white border border-zinc-700'
-              : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900'
-          }`}
-        >
-          <Share2 className="w-3.5 h-3.5 text-rose-400" />
-          <span>2 Captions & Tags</span>
-        </button>
-
-        <button
-          id="ig-tab-hooks"
-          onClick={() => setActiveTab('hooks')}
-          className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold transition-all ${
-            activeTab === 'hooks'
-              ? 'bg-zinc-800 text-white border border-zinc-700'
-              : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900'
-          }`}
-        >
-          <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-          <span>5 Cover Hook Ideas</span>
-        </button>
-      </div>
-
-      {/* 1. Carousel View */}
-      {activeTab === 'carousel' && (
-        <div className="space-y-5">
-          <div className="flex items-center justify-between">
+      {/* PRIMARY RESULT 1: COMPLETE CAPTION */}
+      {activeFormat === 'caption' && (
+        <div className="rounded-xl bg-[#1d2125] border border-[#262b30] p-5 space-y-4">
+          <div className="flex items-center justify-between pb-3 border-b border-[#262b30]">
             <div>
-              <h4 className="text-sm font-bold text-white">{content.carousel.topic}</h4>
-              <p className="text-xs text-zinc-400">
-                Visual slide-by-slide guide for Canva, Figma, or designers.
+              <span className="text-xs font-semibold uppercase tracking-wider text-[#9ba3af]">
+                Primary Caption Output
+              </span>
+              <p className="text-[11px] text-[#9ba3af] mt-0.5">
+                Formatted with linebreaks, bullet points, and CTA.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                id="edit-instagram-caption-btn"
+                onClick={() => {
+                  setDraftCaption(primaryCaption.caption);
+                  setIsEditingCaption(!isEditingCaption);
+                }}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-[#cbd2d9] bg-[#22272b] hover:bg-[#282e34] hover:text-[#f0f2f5] border border-[#2e343b] transition-colors cursor-pointer"
+              >
+                <Edit3 className="w-3.5 h-3.5" />
+                <span>{isEditingCaption ? 'Cancel' : 'Edit'}</span>
+              </button>
+
+              <button
+                id="copy-instagram-caption-btn"
+                onClick={() => handleCopy(primaryCaption.caption, 'Instagram Caption', 'caption')}
+                className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-500 transition-colors shadow-sm cursor-pointer"
+              >
+                {copiedId === 'caption' ? (
+                  <>
+                    <Check className="w-3.5 h-3.5" />
+                    <span>Copied!</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>Copy Caption</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+
+          {isEditingCaption ? (
+            <div className="space-y-3">
+              <textarea
+                value={draftCaption}
+                onChange={(e) => setDraftCaption(e.target.value)}
+                rows={10}
+                className="w-full rounded-xl bg-[#16191c] border border-[#2e343b] p-4 text-sm text-[#f0f2f5] focus:outline-hidden focus:border-emerald-500 font-sans leading-relaxed resize-y"
+              />
+              <div className="flex justify-end gap-2">
+                <button
+                  onClick={() => setIsEditingCaption(false)}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium text-[#9ba3af] hover:text-[#f0f2f5]"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSaveCaption}
+                  className="px-4 py-1.5 rounded-lg text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-500"
+                >
+                  Save Caption
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="p-4 rounded-xl bg-[#16191c] border border-[#262b30] text-[#f0f2f5] text-sm leading-relaxed whitespace-pre-wrap font-sans selection:bg-emerald-500/30">
+              {primaryCaption.caption}
+            </div>
+          )}
+
+          {/* Hashtags */}
+          {primaryCaption.suggestedHashtags && primaryCaption.suggestedHashtags.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-[#262b30]">
+              <span className="text-[11px] font-semibold text-[#9ba3af] mr-2">Hashtags:</span>
+              {primaryCaption.suggestedHashtags.map((h, idx) => (
+                <span
+                  key={idx}
+                  className="px-2 py-0.5 rounded-md bg-[#16191c] border border-[#262b30] text-xs text-[#cbd2d9] font-mono"
+                >
+                  {h.startsWith('#') ? h : `#${h}`}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* PRIMARY RESULT 2: SUBSTANTIVE CAROUSEL */}
+      {activeFormat === 'carousel' && (
+        <div className="rounded-xl bg-[#1d2125] border border-[#262b30] p-5 space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-[#262b30]">
+            <div>
+              <span className="text-xs font-semibold uppercase tracking-wider text-[#9ba3af]">
+                Carousel Package: {content.carousel?.topic || 'Slide Breakdown'}
+              </span>
+              <p className="text-[11px] text-[#9ba3af] mt-0.5">
+                Every slide contributes substantive content to the argument.
               </p>
             </div>
 
             <button
-              id="copy-carousel-all-btn"
-              onClick={handleCopyCarouselOutline}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-zinc-300 bg-zinc-800 hover:bg-zinc-700 hover:text-white transition-colors"
+              onClick={handleCopyFullCarousel}
+              className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-500 transition-colors shadow-sm cursor-pointer"
             >
-              {copiedId === 'carousel-full' ? (
-                <Check className="w-3.5 h-3.5 text-emerald-400" />
+              {copiedId === 'full-carousel' ? (
+                <>
+                  <Check className="w-3.5 h-3.5" />
+                  <span>All Slides Copied!</span>
+                </>
               ) : (
-                <Copy className="w-3.5 h-3.5" />
+                <>
+                  <Copy className="w-3.5 h-3.5" />
+                  <span>Copy All Slides</span>
+                </>
               )}
-              <span>Copy All Slides</span>
             </button>
           </div>
 
-          {/* Interactive Slide Viewer & Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {content.carousel.slides.map((slide, idx) => {
-              const isFirst = idx === 0;
-              const isLast = idx === content.carousel.slides.length - 1;
-              return (
-                <div
-                  key={idx}
-                  id={`ig-slide-card-${idx}`}
-                  className="rounded-xl bg-zinc-900/85 border border-zinc-800 hover:border-zinc-700/90 p-4 flex flex-col justify-between transition-all group relative overflow-hidden"
-                >
-                  <div>
-                    <div className="flex items-center justify-between mb-3 pb-2 border-b border-zinc-800/80">
-                      <div className="flex items-center gap-1.5">
-                        <span className="w-5 h-5 rounded-full bg-zinc-800 text-[10px] font-mono font-bold text-zinc-300 flex items-center justify-center">
-                          {slide.slideNumber}
-                        </span>
-                        <span className="text-[11px] font-bold uppercase tracking-wider text-purple-400">
-                          {isFirst ? 'Cover Slide' : isLast ? 'CTA Slide' : `Slide ${slide.slideNumber}`}
-                        </span>
-                      </div>
-                      <button
-                        onClick={() =>
-                          handleCopy(
-                            `[Slide ${slide.slideNumber}]\n${slide.headline}\n${slide.bodyText}\nNote: ${slide.visualNote}`,
-                            `Slide #${slide.slideNumber}`,
-                            `slide-${idx}`
-                          )
-                        }
-                        className="p-1 rounded text-zinc-400 hover:text-white hover:bg-zinc-800"
-                        title="Copy Slide"
-                      >
-                        {copiedId === `slide-${idx}` ? (
-                          <Check className="w-3.5 h-3.5 text-emerald-400" />
-                        ) : (
-                          <Copy className="w-3.5 h-3.5" />
-                        )}
-                      </button>
-                    </div>
+          {/* Carousel Slide Navigator */}
+          <div className="flex items-center justify-between gap-2 p-2 rounded-xl bg-[#16191c] border border-[#262b30]">
+            <button
+              disabled={activeSlideIdx === 0}
+              onClick={() => setActiveSlideIdx((prev) => Math.max(0, prev - 1))}
+              className="p-1.5 rounded-lg text-[#9ba3af] hover:text-[#f0f2f5] hover:bg-[#22272b] transition-colors disabled:opacity-30 cursor-pointer"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
 
-                    <h5 className="text-sm font-bold text-zinc-100 mb-2 leading-snug">
-                      {slide.headline}
-                    </h5>
-                    <p className="text-xs text-zinc-300 leading-relaxed whitespace-pre-line mb-3">
-                      {slide.bodyText}
-                    </p>
-                  </div>
-
-                  <div className="pt-2.5 border-t border-zinc-800/80">
-                    <span className="text-[10px] font-mono font-semibold uppercase text-zinc-400 block mb-0.5">
-                      Visual Note
-                    </span>
-                    <p className="text-[11px] text-zinc-400 italic leading-tight">
-                      {slide.visualNote}
-                    </p>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* 2. Captions View */}
-      {activeTab === 'captions' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {content.captions.map((cap, idx) => {
-            const isEditing = editingCaptionIdx === idx;
-            return (
-              <div
-                key={idx}
-                id={`ig-caption-card-${idx}`}
-                className="rounded-xl bg-zinc-900/80 border border-zinc-800 p-5 space-y-4 flex flex-col justify-between"
-              >
-                <div>
-                  <div className="flex items-center justify-between pb-2 border-b border-zinc-800/80 mb-3">
-                    <span className="text-xs font-bold uppercase tracking-wider text-rose-400">
-                      Caption Option {idx + 1}
-                    </span>
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => {
-                          if (isEditing) {
-                            handleSaveCaption(idx);
-                          } else {
-                            setCaptionDraft(cap.caption);
-                            setEditingCaptionIdx(idx);
-                          }
-                        }}
-                        className="p-1.5 rounded text-zinc-400 hover:text-white hover:bg-zinc-800"
-                        title={isEditing ? 'Save' : 'Edit'}
-                      >
-                        {isEditing ? (
-                          <Check className="w-3.5 h-3.5 text-emerald-400" />
-                        ) : (
-                          <Edit3 className="w-3.5 h-3.5" />
-                        )}
-                      </button>
-                      <button
-                        onClick={() =>
-                          handleCopy(
-                            `${isEditing ? captionDraft : cap.caption}\n\n${cap.suggestedHashtags.join(' ')}`,
-                            `Instagram Caption ${idx + 1}`,
-                            `caption-${idx}`
-                          )
-                        }
-                        className="p-1.5 rounded text-zinc-400 hover:text-white hover:bg-zinc-800"
-                        title="Copy Caption"
-                      >
-                        {copiedId === `caption-${idx}` ? (
-                          <Check className="w-3.5 h-3.5 text-emerald-400" />
-                        ) : (
-                          <Copy className="w-3.5 h-3.5" />
-                        )}
-                      </button>
-                    </div>
-                  </div>
-
-                  {isEditing ? (
-                    <div className="space-y-2">
-                      <textarea
-                        value={captionDraft}
-                        onChange={(e) => setCaptionDraft(e.target.value)}
-                        rows={10}
-                        className="w-full rounded-lg bg-zinc-950 border border-zinc-700 p-3 text-xs text-zinc-100 font-sans leading-relaxed focus:outline-hidden focus:border-rose-500 resize-none"
-                      />
-                      <div className="flex justify-end gap-2">
-                        <button
-                          onClick={() => setEditingCaptionIdx(null)}
-                          className="px-2 py-1 text-xs text-zinc-400"
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          onClick={() => handleSaveCaption(idx)}
-                          className="px-3 py-1 text-xs bg-rose-600 hover:bg-rose-500 text-white rounded font-medium"
-                        >
-                          Save
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="p-3.5 rounded-lg bg-zinc-950/70 border border-zinc-800/80 text-xs sm:text-sm text-zinc-200 whitespace-pre-line leading-relaxed">
-                      {cap.caption}
-                    </div>
-                  )}
-                </div>
-
-                <div className="pt-3 border-t border-zinc-800/80 space-y-2">
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-1">
-                    <Hash className="w-3 h-3 text-indigo-400" /> Recommended Hashtags
-                  </span>
-                  <div className="flex flex-wrap gap-1.5">
-                    {cap.suggestedHashtags.map((tag, tagIdx) => (
-                      <span
-                        key={tagIdx}
-                        className="text-[11px] px-2 py-0.5 rounded-md bg-zinc-800 text-zinc-300 font-mono"
-                      >
-                        {tag}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* 3. Cover Hook Ideas */}
-      {activeTab === 'hooks' && (
-        <div className="rounded-xl bg-zinc-900/80 border border-zinc-800 p-5">
-          <div className="mb-4">
-            <h4 className="text-sm font-bold text-white">5 High-CTR Cover Hook Ideas</h4>
-            <p className="text-xs text-zinc-400">
-              Tested formats for your primary Instagram cover image, Reel thumbnail, or Story slide.
-            </p>
-          </div>
-
-          <div className="space-y-3">
-            {content.hookIdeas.map((hook, idx) => (
-              <div
-                key={idx}
-                id={`ig-hook-${idx}`}
-                className="group flex items-center justify-between p-3.5 rounded-xl bg-zinc-950/80 border border-zinc-800/90 hover:border-amber-500/40 transition-all"
-              >
-                <div className="flex items-center gap-3">
-                  <span className="w-6 h-6 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs font-mono font-bold flex items-center justify-center">
-                    0{idx + 1}
-                  </span>
-                  <p className="text-xs sm:text-sm font-semibold text-zinc-100 group-hover:text-white">
-                    {hook}
-                  </p>
-                </div>
+            <div className="flex items-center gap-1.5 overflow-x-auto py-1">
+              {slides.map((s, idx) => (
                 <button
-                  onClick={() => handleCopy(hook, `Cover Hook #${idx + 1}`, `hook-ig-${idx}`)}
-                  className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors shrink-0"
-                  title="Copy Hook"
+                  key={idx}
+                  onClick={() => {
+                    setActiveSlideIdx(idx);
+                    setIsEditingSlide(false);
+                  }}
+                  className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer whitespace-nowrap ${
+                    activeSlideIdx === idx
+                      ? 'bg-emerald-600 text-white shadow-xs'
+                      : 'bg-[#22272b] text-[#9ba3af] hover:text-[#f0f2f5]'
+                  }`}
                 >
-                  {copiedId === `hook-ig-${idx}` ? (
-                    <Check className="w-3.5 h-3.5 text-emerald-400" />
+                  Slide {s.slideNumber || idx + 1}
+                </button>
+              ))}
+            </div>
+
+            <button
+              disabled={activeSlideIdx === slides.length - 1}
+              onClick={() => setActiveSlideIdx((prev) => Math.min(slides.length - 1, prev + 1))}
+              className="p-1.5 rounded-lg text-[#9ba3af] hover:text-[#f0f2f5] hover:bg-[#22272b] transition-colors disabled:opacity-30 cursor-pointer"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* Active Slide Canvas */}
+          <div className="p-6 rounded-xl bg-[#16191c] border border-[#262b30] space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-[#22272b]">
+              <span className="text-[11px] font-mono text-emerald-400 font-semibold uppercase">
+                Slide {currentSlide.slideNumber} of {slides.length}
+              </span>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    setDraftSlideHeadline(currentSlide.headline);
+                    setDraftSlideBody(currentSlide.bodyText);
+                    setIsEditingSlide(!isEditingSlide);
+                  }}
+                  className="flex items-center gap-1 text-xs text-[#9ba3af] hover:text-[#f0f2f5] cursor-pointer"
+                >
+                  <Edit3 className="w-3 h-3" />
+                  <span>{isEditingSlide ? 'Cancel' : 'Edit'}</span>
+                </button>
+
+                <button
+                  onClick={() =>
+                    handleCopy(
+                      `${currentSlide.headline}\n\n${currentSlide.bodyText}`,
+                      `Slide ${currentSlide.slideNumber}`,
+                      `slide-${activeSlideIdx}`
+                    )
+                  }
+                  className="flex items-center gap-1 text-xs text-emerald-400 hover:text-emerald-300 font-medium cursor-pointer"
+                >
+                  {copiedId === `slide-${activeSlideIdx}` ? (
+                    <>
+                      <Check className="w-3 h-3" />
+                      <span>Copied</span>
+                    </>
                   ) : (
-                    <Copy className="w-3.5 h-3.5" />
+                    <>
+                      <Copy className="w-3 h-3" />
+                      <span>Copy Slide</span>
+                    </>
                   )}
                 </button>
               </div>
-            ))}
+            </div>
+
+            {isEditingSlide ? (
+              <div className="space-y-3">
+                <div>
+                  <label className="text-[11px] font-medium text-[#9ba3af] block mb-1">
+                    Slide Headline
+                  </label>
+                  <input
+                    type="text"
+                    value={draftSlideHeadline}
+                    onChange={(e) => setDraftSlideHeadline(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg bg-[#111315] border border-[#2e343b] text-sm text-[#f0f2f5] focus:outline-hidden focus:border-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] font-medium text-[#9ba3af] block mb-1">
+                    Slide Body Text (Substantive content)
+                  </label>
+                  <textarea
+                    value={draftSlideBody}
+                    onChange={(e) => setDraftSlideBody(e.target.value)}
+                    rows={4}
+                    className="w-full p-3 rounded-lg bg-[#111315] border border-[#2e343b] text-sm text-[#f0f2f5] focus:outline-hidden focus:border-emerald-500 font-sans leading-relaxed"
+                  />
+                </div>
+                <div className="flex justify-end gap-2">
+                  <button
+                    onClick={() => setIsEditingSlide(false)}
+                    className="px-3 py-1.5 text-xs text-[#9ba3af] hover:text-[#f0f2f5]"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSaveSlide}
+                    className="px-4 py-1.5 rounded-lg text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-500"
+                  >
+                    Save Slide
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <h4 className="text-base sm:text-lg font-bold text-[#f0f2f5] tracking-tight">
+                  {currentSlide.headline}
+                </h4>
+                <p className="text-sm text-[#cbd2d9] leading-relaxed whitespace-pre-wrap font-sans">
+                  {currentSlide.bodyText}
+                </p>
+                {currentSlide.visualNote && (
+                  <div className="p-3 rounded-lg bg-[#111315] border border-[#22272b] text-[11px] text-[#9ba3af]">
+                    <strong className="text-[#cbd2d9] font-medium">Design / Visual Note: </strong>
+                    {currentSlide.visualNote}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
+        </div>
+      )}
+
+      {/* OPTIONAL SUPPORTING TOOLS: COVER HOOK IDEAS */}
+      {content.hookIdeas && content.hookIdeas.length > 0 && (
+        <div className="rounded-xl bg-[#1d2125] border border-[#262b30] overflow-hidden">
+          <button
+            onClick={() => setShowSupportingTools(!showSupportingTools)}
+            className="w-full flex items-center justify-between p-4 text-xs font-semibold text-[#cbd2d9] hover:text-[#f0f2f5] transition-colors cursor-pointer"
+          >
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-emerald-400" />
+              <span>Optional Supporting Tools (Carousel Cover Hook Ideas)</span>
+            </div>
+            {showSupportingTools ? (
+              <ChevronUp className="w-4 h-4 text-[#9ba3af]" />
+            ) : (
+              <ChevronDown className="w-4 h-4 text-[#9ba3af]" />
+            )}
+          </button>
+
+          {showSupportingTools && (
+            <div className="p-4 pt-0 border-t border-[#262b30] space-y-2 text-xs pt-3">
+              {content.hookIdeas.map((hook, idx) => (
+                <div
+                  key={idx}
+                  className="flex items-center justify-between p-2.5 rounded-lg bg-[#16191c] border border-[#262b30]"
+                >
+                  <p className="text-[#f0f2f5] font-medium">{hook}</p>
+                  <button
+                    onClick={() => handleCopy(hook, `Cover Hook #${idx + 1}`, `ig-hook-${idx}`)}
+                    className="p-1 rounded text-[#9ba3af] hover:text-[#f0f2f5] hover:bg-[#22272b] transition-colors"
+                  >
+                    {copiedId === `ig-hook-${idx}` ? (
+                      <Check className="w-3.5 h-3.5 text-emerald-400" />
+                    ) : (
+                      <Copy className="w-3.5 h-3.5" />
+                    )}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>

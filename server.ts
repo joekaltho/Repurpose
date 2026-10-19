@@ -2,7 +2,7 @@ import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
 
 dotenv.config();
 
@@ -27,12 +27,30 @@ function getGeminiClient(): GoogleGenAI | null {
   return aiClient;
 }
 
+import {
+  CREDIT_CONFIG,
+  calculateRepurposeCost,
+  DEFAULT_FREE_ALLOWANCE,
+} from "./src/config/credits";
+import {
+  validateContentGrounding,
+  sanitizeUngroundedClaims,
+} from "./src/utils/sourceGrounding";
+
 // Health check endpoint
 app.get("/api/health", (req, res) => {
   res.json({
     status: "ok",
     hasApiKey: Boolean(process.env.GEMINI_API_KEY),
     model: "gemini-3.8-flash",
+  });
+});
+
+// Central credit configuration endpoint
+app.get("/api/credit-config", (req, res) => {
+  res.json({
+    defaultFreeAllowance: DEFAULT_FREE_ALLOWANCE,
+    creditConfig: CREDIT_CONFIG,
   });
 });
 
@@ -44,7 +62,6 @@ app.post("/api/extract-url", async (req, res) => {
       return res.status(400).json({ error: "Valid URL is required" });
     }
 
-    // Validate URL format
     let parsedUrl: URL;
     try {
       parsedUrl = new URL(url.startsWith("http") ? url : `https://${url}`);
@@ -52,11 +69,11 @@ app.post("/api/extract-url", async (req, res) => {
       return res.status(400).json({ error: "Invalid URL format" });
     }
 
-    // Try fetching with standard User-Agent
     const response = await fetch(parsedUrl.toString(), {
       headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
       },
       signal: AbortSignal.timeout(8000),
     });
@@ -67,11 +84,9 @@ app.post("/api/extract-url", async (req, res) => {
 
     const html = await response.text();
 
-    // Extract title
     const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
     const title = titleMatch ? titleMatch[1].trim() : parsedUrl.hostname;
 
-    // Remove scripts, styles, navs, headers, footers
     let cleaned = html
       .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, " ")
       .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, " ")
@@ -86,7 +101,6 @@ app.post("/api/extract-url", async (req, res) => {
       .replace(/\s+/g, " ")
       .trim();
 
-    // Limit to reasonable article text length
     if (cleaned.length > 8000) {
       cleaned = cleaned.slice(0, 8000) + "...";
     }
@@ -110,6 +124,121 @@ app.post("/api/extract-url", async (req, res) => {
   }
 });
 
+// Voice Profile Analysis endpoint (Extracts founder voice fingerprint from samples)
+app.post("/api/analyze-voice", async (req, res) => {
+  try {
+    const {
+      writingSamples = [],
+      bio = "",
+      startupOneLiner = "",
+      founderName = "",
+      userBalance,
+      requestId = `voice_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    } = req.body;
+
+    if (!writingSamples || writingSamples.length === 0 || writingSamples.join("").trim().length < 40) {
+      return res.status(400).json({
+        error: "Please provide at least one representative writing sample (40+ characters) to analyze.",
+      });
+    }
+
+    // Server-side credit check: voice analysis costs CREDIT_CONFIG.VOICE_FINGERPRINT_ANALYSIS
+    const requiredCredits = CREDIT_CONFIG.VOICE_FINGERPRINT_ANALYSIS;
+    if (typeof userBalance === "number" && userBalance < requiredCredits) {
+      return res.status(402).json({
+        error: "Insufficient credits",
+        requiredCredits,
+        balance: userBalance,
+        message: `Voice fingerprint analysis requires ${requiredCredits} credits, but you have ${userBalance} available.`,
+      });
+    }
+
+    const ai = getGeminiClient();
+    let resultPayload: any = null;
+
+    if (ai) {
+      try {
+        const prompt = `You are an expert ghostwriter and voice analyst for technical founders, indie hackers, and startup CEOs.
+Analyze the following writing samples and context from a founder:
+FOUNDER NAME: ${founderName || "Founder"}
+BIO / BACKGROUND: ${bio || "Technical Founder"}
+STARTUP ONE-LINER: ${startupOneLiner || "B2B Software"}
+
+WRITING SAMPLES:
+${writingSamples.map((s: string, i: number) => `Sample ${i + 1}:\n"""${s}"""`).join("\n\n")}
+
+Task: Extract their distinctive voice fingerprint.
+Return strictly valid JSON with this schema:
+{
+  "voiceSummary": "2-3 sentences summarizing their signature voice, cadence, and worldview.",
+  "toneCharacteristics": ["4-6 concise tone adjectives, e.g. 'Direct', 'Unflinching', 'Operator-pragmatic']",
+  "signatureRhythm": "1-2 sentences on sentence length, whitespace, and structural quirks.",
+  "recommendedBannedPhrases": ["4-6 specific buzzwords that would ruin this founder's voice"]
+}`;
+
+        const response = await ai.models.generateContent({
+          model: "gemini-3.8-flash",
+          contents: prompt,
+          config: {
+            responseMimeType: "application/json",
+            temperature: 0.4,
+          },
+        });
+
+        const rawText = response.text || "";
+        const jsonText = rawText.replace(/^```json\s*/, "").replace(/\s*```$/, "").trim();
+        resultPayload = JSON.parse(jsonText);
+      } catch (geminiErr) {
+        console.error("Voice analysis with Gemini failed, falling back to heuristic:", geminiErr);
+      }
+    }
+
+    if (!resultPayload) {
+      // Heuristic fallback
+      const sampleText = writingSamples.join(" ");
+      const words = sampleText.split(/\s+/).filter(Boolean);
+      const sentences = sampleText.split(/[.?!]+/).filter(Boolean);
+      const avgSentLen = words.length / (sentences.length || 1);
+      const isPunchy = avgSentLen < 15;
+      const isTechnical = /latency|postgres|api|code|docker|infra|scale|deploy|sql|db/i.test(sampleText);
+
+      resultPayload = {
+        voiceSummary: `Authoritative, ${isPunchy ? "punchy and high-velocity" : "deliberate and analytical"} voice focused on practical realities rather than theoretical hype. Speaks from firsthand builder experience with zero patience for corporate posturing.`,
+        toneCharacteristics: [
+          isPunchy ? "Direct & concise" : "Analytical & rigorous",
+          isTechnical ? "Deep technical credibility" : "Pragmatic builder perspective",
+          "Zero fluff",
+          "Hard-won realism",
+          "Action-oriented",
+        ],
+        signatureRhythm: `${isPunchy ? "Short, declarative sentences (average ~" + Math.round(avgSentLen) + " words) with sharp line breaks" : "Structured paragraphs with clear causal argumentation"}. Leans on real operational contrasts over abstract claims.`,
+        recommendedBannedPhrases: [
+          "supercharge",
+          "game changer",
+          "in today's fast-paced world",
+          "let's dive in",
+          "unlock your potential",
+          "buckle up",
+        ],
+      };
+    }
+
+    // Credits are charged ONLY when generation succeeds
+    return res.json({
+      ...resultPayload,
+      creditUsage: {
+        operation: "voice_analysis",
+        cost: requiredCredits,
+        description: "AI Voice Fingerprint Analysis",
+        requestId,
+      },
+    });
+  } catch (err: any) {
+    console.error("Voice analysis error:", err);
+    return res.status(500).json({ error: err.message || "Failed to analyze voice." });
+  }
+});
+
 // Primary Repurpose endpoint
 app.post("/api/repurpose", async (req, res) => {
   try {
@@ -118,11 +247,15 @@ app.post("/api/repurpose", async (req, res) => {
       inputType = "text",
       platforms = ["x", "linkedin", "tiktok", "instagram"],
       style = "Founder",
-      targetAudience = "Builders, founders, and professionals",
+      targetAudience = "Technical founders, engineers, and startup CEOs",
       desiredTone = "Insightful, direct, conversational",
       callToAction = "Share thoughts in comments or follow for more",
       preserveVoice = true,
       regeneratePlatform,
+      voiceProfile,
+      contentGoal = "Share engineering lessons",
+      userBalance,
+      requestId = `rep_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
     } = req.body;
 
     if (!sourceContent || typeof sourceContent !== "string" || sourceContent.trim().length < 20) {
@@ -131,70 +264,164 @@ app.post("/api/repurpose", async (req, res) => {
       });
     }
 
+    // Calculate actual cost based on operations performed
+    const isRegeneration = Boolean(regeneratePlatform);
+    const requiredCredits = calculateRepurposeCost(platforms, isRegeneration);
+
+    // Enforce balance check on the server
+    if (typeof userBalance === "number" && userBalance < requiredCredits) {
+      return res.status(402).json({
+        error: "Insufficient credits",
+        requiredCredits,
+        balance: userBalance,
+        message: `This operation requires ${requiredCredits} credits, but you have ${userBalance} available. Please upgrade your capacity or select fewer platforms.`,
+      });
+    }
+
     const ai = getGeminiClient();
 
-    // Check if we can use Gemini API
+    // Prepare voice profile context & learned feedback rules
+    const hasFounderName = Boolean(voiceProfile?.founderName && voiceProfile.founderName.trim());
+    const founderName = hasFounderName ? voiceProfile.founderName : "Founder";
+    const hasStartupName = Boolean(voiceProfile?.startupName && voiceProfile.startupName.trim());
+    const startupName = hasStartupName ? voiceProfile.startupName : "";
+    const startupOneLiner = voiceProfile?.startupOneLiner || "";
+    const founderBio = voiceProfile?.bio || "";
+    const activeAdjustments = (voiceProfile?.learnedAdjustments || [])
+      .filter((adj: any) => adj.active)
+      .map((adj: any) => adj.feedback);
+
+    const bannedPhrases = Array.from(
+      new Set([
+        "in today's fast-paced world",
+        "here's the thing",
+        "let's dive in",
+        "unlock your potential",
+        "game changer",
+        "supercharge",
+        "crucial",
+        "it's no secret that",
+        "buckle up",
+        "at the end of the day",
+        "delve",
+        "testament",
+        "landscape",
+        ...(voiceProfile?.bannedPhrases || []),
+      ])
+    );
+
+    const writingSamples = voiceProfile?.writingSamples || [];
+
     if (ai) {
       try {
-        const systemPrompt = `You are an elite editorial ghostwriter and content repurposing strategist for top creators, founders, and executives.
-Your mission is to take ONE raw source piece of content (idea, article, thread, or transcript) and reconstruct it into platform-native content.
+        const systemPrompt = `You are an elite editorial ghostwriter and content repurposing strategist exclusively for technical founders, indie hackers, and startup CEOs.
+Your mission is to take ONE raw thought, incident, learning, or note and reconstruct it into platform-native content that sounds authentically like the user.
 
-CRITICAL QUALITY BAR & BANNED AI CLICHES:
-1. NEVER use generic AI cliches or empty buzzwords:
-   - FORBIDDEN: "In today's fast-paced world", "Here's the thing", "Let's dive in", "Unlock your potential", "Game changer", "Whether you're a...", "Supercharge", "Crucial", "It's no secret that", "Buckle up", "At the end of the day", or generic motivational fluff.
-2. PRESERVE THE CREATOR'S ORIGINAL VOICE:
-   - Voice preservation mode: ${preserveVoice ? "STRICT. Keep the original creator's cadence, specific anecdotes, vocabulary, and authentic human quirks." : "ADAPTIVE. Enhance clarity while retaining key points."}
-   - Style archetype: "${style}".
-   - Target audience: "${targetAudience}".
-   - Desired tone: "${desiredTone}".
-   - Call to action: "${callToAction}".
-3. DO NOT just summarize or reword. First conduct deep extraction (Core message, main ideas, stories, arguments, useful examples, interesting claims, quotable statements, potential hooks, contrarian opinions).
-4. Reconstruct bespoke content for each requested platform:
-   - Platforms requested: ${JSON.stringify(platforms)}
-   ${regeneratePlatform ? `NOTE: Regenerating specifically for platform: ${regeneratePlatform}. Maintain fresh, unique variations.` : ""}
+USER CONTEXT:
+- Founder Name: ${hasFounderName ? founderName : "(Not specified - speak in authentic founder voice without inventing a persona)"}
+- Founder Role & Background: ${founderBio || "Technical Founder"}
+- Startup Name: ${hasStartupName ? startupName : "(Not specified - do NOT invent a company or product name)"}
+- Startup What-It-Does: ${startupOneLiner || "(Not specified - only refer to product details provided in the source)"}
+- Target Audience: ${targetAudience || voiceProfile?.targetAudience || "Engineers and founders"}
+- Content Objective / Goal: ${contentGoal}
+- Content Style / Archetype: ${style}
+- Desired Tone: ${desiredTone}
+- Preferred Call to Action: ${callToAction}
+- Tone Traits: ${(voiceProfile?.toneCharacteristics || []).join(", ") || "Direct, pragmatic, grounded"}
+
+ACTIVE LEARNED VOICE ADJUSTMENTS (RULES TAUGHT BY USER FEEDBACK):
+${activeAdjustments.length > 0 ? activeAdjustments.map((a: string) => `• ${a}`).join("\n") : "• Maintain a natural, unfiltered builder tone with concise paragraphs."}
+
+${writingSamples.length > 0 ? `
+REPRESENTATIVE WRITING SAMPLES (MIMIC THIS EXACT CADENCE AND STYLE, DO NOT COPY FACTS FROM IT):
+${writingSamples.map((s: string, i: number) => `Sample ${i + 1}:\n"""${s}"""`).join("\n\n")}
+` : ""}
+
+================================================================================
+CRITICAL CONSTITUTION: ABSOLUTE FACTUAL INTEGRITY & ZERO-FABRICATION MANDATE
+================================================================================
+You must follow these rules without exception. Violating any rule breaks trust with the user.
+
+1. ZERO FABRICATION OF FACTS & FIRST-PERSON ANECDOTES:
+   - NEVER invent personal experiences, past launches, customer conversations, user feedback, experiments, decisions, or outcomes.
+   - NEVER invent customer interviews, user counts, ghosting counts, revenue, MRR, ARR, percentages, dates, metrics, or business milestones.
+   - ABSOLUTELY PROHIBITED CLAIMS (NEVER GENERATE UNLESS EXPLICITLY IN THE SOURCE):
+     * "Interviewing 40 potential customers"
+     * "39 people ghosting after being asked to pay"
+     * "Growing a company to $45k MRR in four months"
+     * "A logistics broker managing 14 spreadsheets"
+     * "Here is what we learned from launching our first version"
+     * "When we launched, everyone gave polite compliments"
+     * "The turning point was talking to one user..."
+     * "We stripped out our fancy secondary features..."
+     * Or any other fabricated customer conversation, dollar figure, or growth milestone.
+   - If the user did not say they launched a product, DO NOT say they launched.
+   - If the user did not say they interviewed users, DO NOT invent customer interviews or conversations.
+   - If the user did not say they reached a revenue number, DO NOT invent a revenue number.
+
+2. SEPARATE FACTS FROM CREATIVE WRITING:
+   - Your job is to improve structure, clarity, storytelling cadence, hooks, tone, and platform formatting.
+   - If the user provides an OPINION, CURRENT STRUGGLE, or EARLY UNCERTAINTY (e.g. "I struggle to get businesses to sign up. I'm still learning what customers need"):
+     * Write honest, grounded content addressing THAT EXACT CURRENT REALITY.
+     * Frame lessons as open principles, candid reflections, and questions for other founders—NOT as past victories, solved problems, or specific past incidents!
+   - If a metric or evidence would strengthen a post, DO NOT invent a number. Instead:
+     * Use a clean bracketed placeholder (e.g., "[Insert your latency / metric here]" or "[Add your drop-off %]").
+     * Note it in the "missingContextNotes" array so the founder can supply their real number if they wish.
+
+3. PRESERVE FACTUAL SCOPE:
+   - Never turn a hypothetical example into a first-person claim of fact (e.g. never claim "When I did X" if the user was stating a general principle).
+   - Preserve the exact meaning and factual scope of the source material across all platforms.
+   - Never assume the user's company, identity, customers, or achievements based on a default profile.
+
+4. BANNED PHRASES & CLICHES:
+   - NEVER use: ${bannedPhrases.map((p) => `"${p}"`).join(", ")}.
+   - Avoid generic AI corporate transitions ("Whether you are a...", "In conclusion", "Fast forward to today").
+
+5. PLATFORM NATIVE CONVENTIONS:
+   - Discerning technical readers: engineers, founders, and operators who hate corporate fluff.
+   - Use whitespace intentionally. No emojis at the start of bullet points unless natural.
 
 PLATFORM SPECIFICATIONS:
 - "intelligence":
-  * "coreMessage": exactly 1 sharp sentence defining the central breakthrough or lesson.
-  * "bestAngle": the single most compelling distribution angle (e.g., contrarian perspective, counter-intuitive metric, relatable blunder).
-  * "potentialHooks": array of 5 strong, distinct scroll-stopping hooks extracted or crafted from the text.
-  * "contentOpportunities": array of 4-6 specific spin-off post ideas that could be created from distinct sub-points.
-  * "keyQuotesAndClaims": array of 3-4 quotable punchy lines from the source.
+  * "coreMessage": exactly 1 sharp sentence defining the central insight or argument from the source.
+  * "bestAngle": the single strongest angle (e.g., contrarian perspective, counter-intuitive insight, honest builder mistake).
+  * "potentialHooks": array of 3 strong, distinct scroll-stopping hooks extracted or crafted from the text without inventing fake facts.
+  * "contentOpportunities": array of 3-4 specific spin-off post ideas that could be created from distinct sub-points in the source.
+  * "keyQuotesAndClaims": array of 2-3 quotable punchy lines from the source text.
+  * "missingContextNotes": array of 1-2 prompts noting details the founder could optionally add for higher proof (e.g., "Adding your actual metric or timeframe would make the opening even stronger").
 
 ${platforms.includes("x") ? `
 - "x":
-  * "hooks": 5 distinct hook options (questions, bold assertions, numbers, counter-intuitive statements).
-  * "standalonePost": 1 punchy single post under 260 characters, with crisp linebreaks, high-signal, zero corporate jargon.
-  * "thread": array of 5 to 7 tweet strings forming a cohesive thread. Each tweet should be concise, high-value, and end with thread flow (e.g. numbered 1/6 or clean transitions).
-  * "closingLines": 3 alternative strong ending lines / RT calls that feel natural, not spammy.
+  * "hooks": exactly 3 genuinely different hook options (1 bold contrarian assertion, 1 curiosity/tradeoff hook, 1 direct question/bottleneck hook) strictly derived from source points.
+  * "standalonePost": 1 complete, publish-ready single post under 270 characters, crisp linebreaks, high-signal, zero corporate jargon, with relevant closing or CTA.
+  * "thread": array of 4 to 6 tweet strings forming a cohesive, logically connected thread with a clear beginning, useful middle, and strong conclusion. Every tweet MUST contain the actual text of that post in sequence (e.g. "1/5 ...", "2/5 ..."), contribute real substantive points from the source notes, and advance the argument. NO repetitive filler.
+  * "closingLines": 3 alternative strong ending lines / RT calls that feel natural for a founder.
+  * "callToAction": 1 relevant natural call to action.
 ` : ""}
 
 ${platforms.includes("linkedin") ? `
 - "linkedin":
-  * "variations": 3 distinct post variations.
-    Each variation must have:
-    - "title": short descriptive angle label (e.g., "The Tactical Breakdown", "The Counter-Intuitive Story", "The 3 Mistakes").
-    - "angle": explanation of the angle.
-    - "content": the complete post formatted with strong opening 2 lines (before the 'see more' fold), generous readable whitespace, short 1-2 sentence paragraphs, personal or pragmatic storytelling, and a natural non-cringe question/CTA at the end.
+  * "variations": array of 3 post variations, where the FIRST variation (variations[0]) is the COMPLETE, PUBLISH-READY PRIMARY POST with title "Primary Publish-Ready Post", a clear argument, useful explanation, natural paragraph flow, generous readable whitespace, and a relevant ending discussion question or CTA.
+  * "alternativeHooks": array of exactly 2 alternative opening hooks for the primary post so the founder can easily test different openings without assembling fragments.
 ` : ""}
 
 ${platforms.includes("tiktok") ? `
 - "tiktok":
-  * "scripts": 3 short-form video scripts (30s-60s) for TikTok / Instagram Reels / YouTube Shorts.
-    Each script must have:
-    - "title": descriptive hook style (e.g., "The Curiosity Gap", "The Unpopular Opinion", "The Breakdown").
-    - "hook": the exact first 3 seconds spoken + visual hook.
-    - "spokenScript": the full dialogue/voiceover text with pacing cues.
-    - "onScreenText": array of 3-5 brief text overlay cues synchronized to the key moments.
-    - "callToAction": natural verbal CTA.
+  * "scripts": array of 1 to 2 video scripts, where scripts[0] is the COMPLETE VIDEO SCRIPT ready to speak on camera.
+    Must include:
+    - "title": descriptive hook style.
+    - "hook": the exact first 3 seconds spoken line.
+    - "spokenScript": the full, natural, speakable body dialogue with concrete substance and natural conversational pacing that a human founder can genuinely say on camera.
+    - "onScreenText": array of 3-4 text overlay cues in a separate section.
+    - "callToAction": clear, natural verbal CTA at the end.
     - "estimatedDuration": e.g., "35 seconds" or "45 seconds".
 ` : ""}
 
 ${platforms.includes("instagram") ? `
 - "instagram":
-  * "captions": 2 engaging captions with line spacing, clear storytelling, clean bullet points, and 5-8 relevant, targeted hashtags (no spam hashtags).
-  * "carousel": 1 high-value educational/story carousel outline. Must include "topic" and "slides" array of 6 to 8 slides, where each slide has "slideNumber", "headline", "bodyText", and "visualNote" (e.g., "Slide 1: Hook slide with bold 48pt font on clean dark canvas").
-  * "hookIdeas": 5 visual / first-slide hook ideas for Instagram graphics or covers.
+  * "captions": 1 to 2 complete captions with clear paragraph flow, bullet points, natural CTA, and 4-6 targeted hashtags.
+  * "carousel": 1 high-value educational/story carousel outline. Must include "topic" and "slides" array of 5 to 7 slides, where every slide contributes substantive value to the story (slideNumber, headline, bodyText with real meat, visualNote).
+  * "hookIdeas": 3 visual / first-slide hook ideas for covers.
 ` : ""}
 
 Output MUST be strictly valid JSON matching the schema with no markdown code blocks or surrounding text.`;
@@ -205,7 +432,10 @@ SOURCE CONTENT:
 ${sourceContent}
 """
 
-Analyze and repurpose into platform-native content now. Return strictly JSON.`;
+${regeneratePlatform ? `NOTE: Regenerate content specifically for platform: ${regeneratePlatform}. Produce fresh, high-signal variations.` : ""}
+
+MANDATORY FACTUAL INTEGRITY INSTRUCTION:
+Do NOT invent customer interviews (e.g. "interviewed 40 people"), ghosting counts ("39 ghosted"), revenue metrics ("$45k MRR"), customer job titles ("logistics broker with 14 spreadsheets"), or personal anecdotes not explicitly stated in the source text above. If the source is an argument or thought, write compelling content around the argument. Return strictly JSON.`;
 
         const response = await ai.models.generateContent({
           model: "gemini-3.8-flash",
@@ -218,9 +448,11 @@ Analyze and repurpose into platform-native content now. Return strictly JSON.`;
         });
 
         const rawText = response.text || "";
-        // Clean any markdown formatting if present
         const jsonText = rawText.replace(/^```json\s*/, "").replace(/\s*```$/, "").trim();
         const parsed = JSON.parse(jsonText);
+
+        // Run Source Grounding Validation Check
+        const groundingReport = validateContentGrounding(sourceContent, voiceProfile, parsed);
 
         const result = {
           id: `rep_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
@@ -234,11 +466,16 @@ Analyze and repurpose into platform-native content now. Return strictly JSON.`;
           preserveVoice,
           platforms,
           status: "Draft",
+          voiceProfileId: voiceProfile?.id,
+          voiceProfileName: voiceProfile?.name || (hasFounderName ? `${founderName}${hasStartupName ? ` (${startupName})` : ''}` : "Builder Voice"),
+          contentGoal,
+          sourceGrounding: groundingReport,
           intelligence: parsed.intelligence || {
             coreMessage: "Central insight extracted from your source idea.",
             bestAngle: "Direct actionable framework",
-            potentialHooks: ["Most people get this completely backward."],
-            contentOpportunities: ["Deep-dive into step 1", "Case study on implementation"],
+            potentialHooks: ["Most people approach this completely backward."],
+            contentOpportunities: ["Deep-dive into step 1", "Engineering postmortem"],
+            missingContextNotes: ["Consider adding your exact time saved or metric for extra proof."],
           },
           x: platforms.includes("x") ? parsed.x : undefined,
           linkedin: platforms.includes("linkedin") ? parsed.linkedin : undefined,
@@ -246,10 +483,21 @@ Analyze and repurpose into platform-native content now. Return strictly JSON.`;
           instagram: platforms.includes("instagram") ? parsed.instagram : undefined,
         };
 
-        return res.json(result);
+        const creditUsage = {
+          operation: isRegeneration ? "platform_regenerate" : "repurpose",
+          cost: requiredCredits,
+          description: isRegeneration
+            ? `Regenerated ${String(regeneratePlatform).toUpperCase()}`
+            : `Repurposed across ${platforms.length} platform${platforms.length > 1 ? "s" : ""} (${platforms.join(", ").toUpperCase()})`,
+          requestId,
+        };
+
+        return res.json({
+          ...result,
+          creditUsage,
+        });
       } catch (geminiError: any) {
         console.error("Gemini generation failed, falling back to smart engine:", geminiError);
-        // Fall back gracefully to high-quality procedural generation
       }
     }
 
@@ -262,10 +510,24 @@ Analyze and repurpose into platform-native content now. Return strictly JSON.`;
       targetAudience,
       desiredTone,
       callToAction,
-      preserveVoice
+      preserveVoice,
+      voiceProfile,
+      contentGoal
     );
 
-    return res.json(generatedFallback);
+    const creditUsage = {
+      operation: isRegeneration ? "platform_regenerate" : "repurpose",
+      cost: requiredCredits,
+      description: isRegeneration
+        ? `Regenerated ${String(regeneratePlatform).toUpperCase()}`
+        : `Repurposed across ${platforms.length} platform${platforms.length > 1 ? "s" : ""} (${platforms.join(", ").toUpperCase()})`,
+      requestId,
+    };
+
+    return res.json({
+      ...generatedFallback,
+      creditUsage,
+    });
   } catch (err: any) {
     console.error("Repurpose route error:", err);
     return res.status(500).json({
@@ -274,7 +536,7 @@ Analyze and repurpose into platform-native content now. Return strictly JSON.`;
   }
 });
 
-// Smart generator function that produces tailored content directly from source ideas
+// Smart generator function that produces strictly source-grounded content directly from source ideas
 function generateSmartRepurpose(
   source: string,
   inputType: string,
@@ -283,137 +545,133 @@ function generateSmartRepurpose(
   targetAudience: string,
   desiredTone: string,
   callToAction: string,
-  preserveVoice: boolean
+  preserveVoice: boolean,
+  voiceProfile?: any,
+  contentGoal?: string
 ) {
-  // Extract sentences and paragraphs
-  const paragraphs = source.split(/\n\s*\n/).filter((p) => p.trim().length > 0);
-  const sentences = source
-    .replace(/\n/g, " ")
+  const hasFounderName = Boolean(voiceProfile?.founderName && voiceProfile.founderName.trim());
+  const hasStartupName = Boolean(voiceProfile?.startupName && voiceProfile.startupName.trim());
+  const companyMention = hasStartupName ? ` at ${voiceProfile.startupName}` : "";
+  const founderMention = hasFounderName ? voiceProfile.founderName : "Founder";
+
+  // Clean and parse sentences from the raw source note
+  const rawSentences = source
+    .replace(/\r?\n+/g, " ")
     .split(/(?<=[.?!])\s+/)
     .map((s) => s.trim())
-    .filter((s) => s.length > 15);
+    .filter((s) => s.length > 8);
 
-  const firstSentence = sentences[0] || source.slice(0, 120);
-  const coreThesis = sentences.find((s) => s.length > 30 && s.length < 160) || firstSentence;
+  const fallbackThesis = source.length > 140 ? `${source.slice(0, 137)}...` : source;
+  const coreThesis = rawSentences.find((s) => s.length > 25 && s.length < 180) || rawSentences[0] || fallbackThesis;
+  const otherSentences = rawSentences.filter((s) => s !== coreThesis);
 
-  // Extract key phrases
-  const words = source.split(/\s+/);
-  const wordCount = words.length;
+  const point1 = otherSentences[0] || "Identify the acute bottleneck and address it directly.";
+  const point2 = otherSentences[1] || "Eliminate vanity distractions that don't solve the core headache.";
+  const point3 = otherSentences[2] || "Prioritize tangible clarity and execution over theoretical complexity.";
 
   const resultId = `rep_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
-  // Intelligence
   const intelligence = {
     coreMessage: coreThesis.endsWith(".") ? coreThesis : `${coreThesis}.`,
-    bestAngle: `The counter-intuitive reality: Why conventional wisdom fails ${targetAudience.toLowerCase()} and what actually drives results.`,
+    bestAngle: `Grounded builder insight for ${targetAudience.toLowerCase()}: Actionable lessons derived directly from your notes.`,
     potentialHooks: [
-      `Most people believe the bottleneck is effort. It's actually focus.`,
-      `I spent months doing this the hard way before realizing one simple truth:`,
-      `The fastest way to fail at this is listening to polite advice.`,
-      `Here is the exact framework that changed our trajectory:`,
-      `If your strategy doesn't feel slightly uncomfortable, it's probably too safe.`,
+      coreThesis,
+      `A critical perspective on how to approach this:`,
+      `The single most overlooked reality for ${targetAudience.toLowerCase()}:`,
+      `Why standard assumptions break down when applied here:`,
+      `A practical principle on this challenge:`,
     ],
     contentOpportunities: [
-      `The 3 costliest mistakes beginners make when starting this`,
-      `Behind-the-scenes teardown: The exact timeline and metrics`,
-      `Why 90% of conventional advice on this topic is outdated`,
-      `The 15-minute daily habit that compounds over 6 months`,
+      `Deep-dive into: "${point1.slice(0, 50)}..."`,
+      `Strategic breakdown: "${point2.slice(0, 50)}..."`,
+      `Implementation pitfalls: "${coreThesis.slice(0, 45)}..."`,
+      `Execution postmortem: "${point3.slice(0, 50)}..."`,
     ],
     keyQuotesAndClaims: [
       coreThesis,
-      sentences[1] || "Polite feedback is the silent killer of early-stage initiatives.",
-      sentences[sentences.length - 1] || "Consistency beats cleverness every single time.",
+      point1,
+      point2,
+    ],
+    missingContextNotes: [
+      "Tip: If you have a specific metric or timeframe from your actual results, add it directly to your post. Never invent numbers.",
     ],
   };
 
-  // Build X content
   const xContent = platforms.includes("x")
     ? {
         hooks: [
-          `90% of people approach this completely backward.`,
-          `The biggest mistake I see smart people make:`,
-          `One shift in thinking saved us months of wasted effort:`,
-          `Unpopular opinion on why conventional advice keeps you stuck:`,
-          `A short breakdown of what actually moved the needle:`,
+          coreThesis,
+          `Unpopular perspective for ${targetAudience.toLowerCase()}: ${point1}`,
+          `The single question founders avoid asking about this:`,
         ],
-        standalonePost: `${coreThesis}\n\nStop optimizing things that don't move the needle. Focus on the one bottleneck your customers are actually screaming about.\n\nSimplicity scales. Complexity stalls.`,
+        standalonePost: `${coreThesis}\n\n${point1}\n\n${callToAction || "What is your experience with this?"}`,
         thread: [
-          `1/6 Most people fail at this not because they lack talent, but because they optimize for the wrong signal.\n\nHere is what took us 9 months to realize:`,
-          `2/6 When you ask people for polite feedback, they tell you what sounds nice.\n\nWhen you ask them to pull out a credit card or change their workflow, the truth comes out instantly.`,
-          `3/6 We stripped away 80% of what we thought was essential.\n\nTurns out, users only cared about solving ONE acute headache. Everything else was vanity.`,
-          `4/6 The rule of thumb:\n\nIf someone isn't swearing about the problem today, you're building a nice-to-have, not an urgent necessity.`,
-          `5/6 How to apply this:\n- Cut the secondary features\n- Speak to the raw frustration\n- Make the core solution 10x faster`,
-          `6/6 ${callToAction || "If this resonated, bookmark it and share your thoughts below."}`,
+          `1/5 ${coreThesis}\n\nHere is a practical breakdown for ${targetAudience.toLowerCase()}:`,
+          `2/5 The root bottleneck:\n\n${point1}\n\nWhen this goes unaddressed, adding secondary features only obscures the friction.`,
+          `3/5 What works instead:\n\n${point2}\n\nFocus on eliminating the immediate drag before building for future scale.`,
+          `4/5 Guiding principle:\n\n${point3}\n\nClarity in execution beats speculative complexity every single time.`,
+          `5/5 ${callToAction || "If this resonated, bookmark this thread and drop your thoughts below."}`,
         ],
         closingLines: [
-          `If this resonated, drop a reply with your biggest bottleneck.`,
-          `Save this thread before you plan your next move.`,
-          `RT the first tweet if you agree simplicity beats complexity.`,
+          `If this resonated with your experience, drop your perspective in the replies.`,
+          `Save this thread before your next planning review.`,
+          `Share this if you value substance over premature complexity.`,
         ],
+        callToAction: callToAction || "Drop your perspective in the replies.",
       }
     : undefined;
 
-  // Build LinkedIn content
   const linkedinContent = platforms.includes("linkedin")
     ? {
         variations: [
           {
-            title: "The Hard-Won Lesson (Story Angle)",
-            angle: "Vulnerable personal narrative showing the pivot from theory to practice.",
-            content: `Most people fail not because their work is flawed, but because they build for an imaginary ideal.\n\nHere is what happened when we stopped listening to polite encouragement:\n\nWe spent months building what we thought was the ultimate solution.\n\nEveryone told us: "This is brilliant, keep us posted."\n\nThen came launch day. Silence.\n\nThe only person who actually converted? A customer who didn't care about our fancy features—they just needed one specific headache resolved in 5 minutes.\n\nThree takeaways:\n1. Polite compliments are the enemy of product-market fit.\n2. True demand is loud and urgent.\n3. Solve the bleeding neck problem first.\n\nWhat is one lesson you had to unlearn the hard way?`,
+            title: "Primary Publish-Ready Post",
+            angle: "A grounded, clear founder perspective addressing the central premise with actionable clarity.",
+            content: `${coreThesis}\n\nMost teams spend too much time on secondary details while overlooking the root bottleneck.\n\nThree key observations on this challenge:\n\n1. Target the Core Problem\n${point1}\n\n2. Strip Out the Noise\n${point2}\n\n3. Deliver Definite Clarity\n${point3}\n\n${callToAction || "How does your team filter out distractions when tackling this?"}`,
           },
           {
             title: "The Tactical Breakdown (Actionable)",
-            angle: "A clean 3-step practical framework directly applied to real workflows.",
-            content: `A simple framework that cut our wasted effort by 70%:\n\n${coreThesis}\n\nHere is the 3-step filter we now use before starting anything new:\n\n1. The Urgency Test\nIs this a top-3 priority for the person paying, or a "someday" item?\n\n2. The Radical Simplification\nWhat happens if we remove 80% of the complexity and deliver the outcome in 1 step?\n\n3. The Proof of Value\nCan the user experience relief within their first 10 minutes?\n\nKeep the main thing the main thing.\n\n${callToAction || "How does your team filter out shiny distractions?"}`,
+            angle: "Clear, grounded framework addressing the core premise directly from the notes.",
+            content: `A builder lesson worth remembering:\n\n${coreThesis}\n\nWhen you examine why initiatives stall, it is rarely due to lack of effort. It is almost always a lack of focus on the single outcome that actually delivers relief.\n\n${point1}\n\n${point2}\n\nFocus on solving the acute headache first.\n\nWhat is your team's primary priority this week?`,
           },
           {
-            title: "The Contrarian Observation (Bold)",
-            angle: "Direct critique of common industry platitudes.",
-            content: `Unpopular observation:\n\nMost teams don't have an execution problem. They have a prioritization problem.\n\nThey spend 40 hours a week fine-tuning secondary details while avoiding the uncomfortable, high-stakes conversation that actually determines success.\n\n${source.slice(0, 220)}...\n\nWhen in doubt, choose clarity over polish.\n\nThoughts? Agree or disagree?`,
+            title: "The Contrarian Angle (High Signal)",
+            angle: "Sharp, thought-provoking examination of common assumptions.",
+            content: `Unpopular observation:\n\n${coreThesis}\n\nConventional advice often pushes for more layers, more features, and more process.\n\nIn reality, breakthroughs come from clarity:\n- ${point1}\n- ${point2}\n- ${point3}\n\nAgree or disagree?`,
           },
+        ],
+        alternativeHooks: [
+          `The hardest part of building isn't the technical execution—it's this:`,
+          `Most advice on this topic focuses on the wrong variable entirely.`,
         ],
       }
     : undefined;
 
-  // Build TikTok / Reels content
   const tiktokContent = platforms.includes("tiktok")
     ? {
         scripts: [
           {
-            title: "The Curiosity Gap Hook",
-            hook: "Stop doing this if you actually want results in 2026. Here is why.",
-            spokenScript: `(Fast cut, looking directly into lens)\nStop doing this if you want actual results. Here's why.\n\nFor months, we thought our problem was effort. We worked 12-hour days building all these fancy details.\n\nTurns out? Nobody cared. They only cared about ONE thing: fixing their immediate pain.\n\nThe second we deleted 80% of the noise and doubled down on the real problem, everything flipped.\n\nHere is the rule: If they aren't losing sleep over it, don't build it.`,
+            title: "The Direct Founder Breakdown",
+            hook: "Stop approaching this the conventional way. Here is why.",
+            spokenScript: `(Direct to camera, steady conversational pace)\n\nStop approaching this the conventional way. Here is why.\n\n${coreThesis}\n\nMost people get bogged down in secondary noise and lose sight of the real issue.\n\nHere is the shift:\n${point1}\n\n${point2}\n\nWhen you cut straight to the acute problem, everything becomes ten times clearer.\n\n${callToAction || "Drop a comment if you have experienced this too."}`,
             onScreenText: [
-              "STOP DOING THIS 🛑",
-              "Effort ≠ Results 📉",
-              "Cut 80% of the noise ✂️",
-              "The 1 Rule that matters 🎯",
+              "The Conventional Trap 🛑",
+              "The Root Bottleneck 🎯",
+              "What Actually Works 💡",
+              "Core Principle 📌",
             ],
-            callToAction: "Drop a comment if you've made this mistake too.",
+            callToAction: callToAction || "Drop a comment if you've seen this happen too.",
             estimatedDuration: "35 seconds",
           },
           {
-            title: "The Contrarian Truth",
-            hook: "Everyone tells you to follow this advice. It's completely wrong.",
-            spokenScript: `(Holding phone casually, conversational pace)\nEveryone tells you to ask your network for feedback.\n\nI'm going to tell you why that almost ruined us.\n\nPolite people will never tell you your idea is irrelevant. They will say 'Looks cool!' and never buy.\n\nWatch what people DO with their wallets and their time, not what they say in a friendly DM.\n\nFocus on the desperate problem, not the polite compliment.`,
+            title: "The 3-Point Teardown",
+            hook: "Three things to remember before you overcomplicate your project.",
+            spokenScript: `(Visual list layout)\n\nThree things to keep in mind:\n\nPoint 1: ${point1}\n\nPoint 2: ${point2}\n\nPoint 3: ${point3}\n\nSimplicity scales.`,
             onScreenText: [
-              "Worst advice I ever followed ❌",
-              "Polite feedback is a trap 🪤",
-              "Actions > Words 💯",
-            ],
-            callToAction: "Follow for more real breakdown breakdowns like this.",
-            estimatedDuration: "40 seconds",
-          },
-          {
-            title: "The Step-by-Step Teardown",
-            hook: "The 3-step checklist that saved us hundreds of wasted hours.",
-            spokenScript: `(Pointing to floating text positions)\nHere is the exact 3-step checklist we use every Monday.\n\nStep 1: Identify the ONE task that causes 80% of user friction.\nStep 2: Remove every step between the problem and the solution.\nStep 3: Test with real users before adding a single extra bell or whistle.\n\nSave this video so you can reference it when planning.`,
-            onScreenText: [
-              "3-STEP CHECKLIST 📋",
-              "1. Find the 80% friction",
-              "2. Strip the middle steps",
-              "3. Validate raw value first",
+              "3 KEY POINTS 📌",
+              "1. The Core Focus",
+              "2. Eliminate Noise",
+              "3. Execute with Clarity",
             ],
             callToAction: "Save this for your next project review.",
             estimatedDuration: "30 seconds",
@@ -422,86 +680,71 @@ function generateSmartRepurpose(
       }
     : undefined;
 
-  // Build Instagram content
   const instagramContent = platforms.includes("instagram")
     ? {
         captions: [
           {
-            caption: `${coreThesis}\n\nIt’s tempting to believe that more features, more hours, and more complexity will lead to a breakthrough.\n\nIn reality, breakthroughs come from subtraction.\n\nWhen we stripped our focus down to the single most acute pain point, our engagement and momentum tripled in 30 days.\n\nSwipe through the carousel 👉 to see the exact breakdown of how we made the shift.\n\nDrop a 💡 if you needed this reminder today.`,
-            callToAction: "Save this post for your next strategy session.",
+            caption: `${coreThesis}\n\nIt is tempting to believe that more complexity leads to better results.\n\nIn reality, progress comes from ruthless clarity:\n• ${point1}\n• ${point2}\n• ${point3}\n\nSwipe through the carousel 👉 for the full breakdown.\n\n${callToAction || "Save this post for your next strategy session."}`,
+            callToAction: "Save this post for your next planning session.",
             suggestedHashtags: [
-              "#contentstrategy",
-              "#founderinsights",
-              "#creatorgrowth",
+              "#startuptips",
+              "#technicalfounder",
+              "#softwareengineering",
               "#buildinginpublic",
-              "#productivitytips",
-              "#repurpose",
-            ],
-          },
-          {
-            caption: `The hardest part of building anything isn't starting—it's having the discipline to ignore good ideas so you can execute the GREAT one.\n\nPolite feedback will lead you in circles. Urgent customer pain will give you a roadmap.\n\nWhich stage are you in right now?\nA) Researching\nB) Building\nC) Scaling\n\nLet me know in the comments below! 👇`,
-            callToAction: "Comment A, B, or C below!",
-            suggestedHashtags: [
-              "#businessmindset",
-              "#entrepreneurship",
-              "#solopreneur",
-              "#creatoreconomy",
-              "#focus",
+              "#clarity",
             ],
           },
         ],
         carousel: {
-          topic: "How to Turn 1 Core Insight Into High-Impact Execution",
+          topic: coreThesis.slice(0, 50),
           slides: [
             {
               slideNumber: 1,
-              headline: "Why 90% of Projects Stall (And How to Fix It)",
-              bodyText: "Swipe to see the 5-step framework that changes how you approach distribution.",
-              visualNote: "Bold contrasting sans-serif typography on dark slate canvas with subtle accent pill.",
+              headline: coreThesis.slice(0, 50),
+              bodyText: "Swipe to see the breakdown of what actually works in practice.",
+              visualNote: "Minimal dark charcoal canvas with high-contrast typography.",
             },
             {
               slideNumber: 2,
-              headline: "The Polite Feedback Trap",
-              bodyText: "When people say 'this is neat', they are being kind. When they ask 'can I pay for this right now?', you have something real.",
-              visualNote: "Split visual: Polite Feedback (Vanity) vs. Urgent Demand (Reality).",
+              headline: "The Core Bottleneck",
+              bodyText: `${point1}\n\nWhen this goes unaddressed, adding more features only obscures the real friction.`,
+              visualNote: "Clean centered quote block with subtle accent border.",
             },
             {
               slideNumber: 3,
-              headline: "The Power of Radical Subtraction",
-              bodyText: "Remove 80% of your secondary features. What is the single outcome the user cannot live without?",
-              visualNote: "Clean icon illustration of funneling down to a singular focal point.",
+              headline: "The Common Trap",
+              bodyText: `Most teams focus on surface symptoms instead of addressing the underlying constraint.`,
+              visualNote: "Split layout highlighting the trap vs the reality.",
             },
             {
               slideNumber: 4,
-              headline: "Execution Over Perfection",
-              bodyText: "A messy solution that solves a real pain today beats an immaculate solution that arrives next year.",
-              visualNote: "Comparison chart showing Speed to Market vs. Theoretical Polish.",
+              headline: "What Works Instead",
+              bodyText: `${point2}\n\nEliminating unnecessary drag delivers immediate momentum.`,
+              visualNote: "Contrasting layout emphasizing subtraction over addition.",
             },
             {
               slideNumber: 5,
-              headline: "The Compounding Loop",
-              bodyText: "Solve one headache brilliantly. Earn trust. Expand only after the core is undeniable.",
-              visualNote: "Circular flywheel diagram highlighting Trust -> Expansion -> Retention.",
+              headline: "The Guiding Rule",
+              bodyText: `${point3}\n\nClarity in execution beats speculative complexity every single time.`,
+              visualNote: "Summary takeaway slide with clean bullet structure.",
             },
             {
               slideNumber: 6,
-              headline: "Save This For Later",
-              bodyText: "Double tap if this resonated. Tag someone who is currently building their dream project.",
-              visualNote: "Clean call to action slide with bookmark and share iconography.",
+              headline: "Save For Later",
+              bodyText: callToAction || "Double tap and save this for your next sprint review.",
+              visualNote: "Action slide with bookmark iconography.",
             },
           ],
         },
         hookIdeas: [
-          "Stop building for people who don't have the problem.",
-          "The 1 metric that actually predicted our revenue:",
-          "Why we deleted 80% of our product (and grew faster):",
-          "The difference between a nice hobby and a real business:",
-          "Swipe to see what happens when you stop seeking approval:",
+          coreThesis.slice(0, 50),
+          "Why conventional wisdom fails in practice:",
+          "The single rule that keeps our priorities clear:",
         ],
       }
     : undefined;
 
-  return {
+  const rawOutput = {
     id: resultId,
     createdAt: new Date().toISOString(),
     sourceContent: source,
@@ -513,17 +756,26 @@ function generateSmartRepurpose(
     preserveVoice,
     platforms,
     status: "Draft",
+    voiceProfileId: voiceProfile?.id,
+    voiceProfileName: voiceProfile?.name || (hasFounderName ? `${founderMention}${companyMention}` : "Builder Voice"),
+    contentGoal,
     intelligence,
     x: xContent,
     linkedin: linkedinContent,
     tiktok: tiktokContent,
     instagram: instagramContent,
   };
+
+  const groundingReport = validateContentGrounding(source, voiceProfile, rawOutput);
+
+  return {
+    ...rawOutput,
+    sourceGrounding: groundingReport,
+  };
 }
 
 // Start the Express server
 async function startServer() {
-  // Mount Vite in dev mode
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },

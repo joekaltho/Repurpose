@@ -1,1 +1,69 @@
 @import "tailwindcss";
+
+@theme {
+  --color-canvas: #111315;
+  --color-sidebar: #171a1d;
+  --color-card: #1d2125;
+  --color-card-hover: #24292e;
+  --color-inner: #16191c;
+  --color-elevated: #22272b;
+  --color-input: #16191c;
+  --color-border-subtle: #262b30;
+  --color-border-visible: #2e343b;
+  --color-border-strong: #3d444d;
+  --color-text-primary: #f0f2f5;
+  --color-text-body: #cbd2d9;
+  --color-text-muted: #9ba3af;
+  --color-accent: #10b981;
+}
+
+@layer base {
+  :root {
+    --canvas-bg: #111315;
+    --sidebar-bg: #171a1d;
+    --surface-card: #1d2125;
+    --surface-inner: #16191c;
+    --surface-elevated: #22272b;
+    --surface-input: #16191c;
+    --border-subtle: #262b30;
+    --border-visible: #2e343b;
+    --border-strong: #3d444d;
+    --text-primary: #f0f2f5;
+    --text-body: #cbd2d9;
+    --text-muted: #9ba3af;
+    --accent: #10b981;
+  }
+
+  body {
+    background-color: #111315;
+    color: #cbd2d9;
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Accessible form focus rings */
+  input:focus-visible,
+  textarea:focus-visible,
+  select:focus-visible {
+    outline: none;
+    border-color: #10b981;
+    box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.25);
+  }
+
+  /* Custom dark scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #2e343b;
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #3d444d;
+  }
+}

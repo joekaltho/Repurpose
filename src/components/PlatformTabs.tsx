@@ -15,6 +15,7 @@ interface PlatformTabsProps {
   onRegeneratePlatform: (platform: Platform) => void;
   onSaveToLibrary: () => void;
   onGenerateMore: () => void;
+  onOpenVoiceTuner?: (platform: Platform) => void;
   isRegenerating?: boolean;
 }
 
@@ -27,6 +28,7 @@ export const PlatformTabs: React.FC<PlatformTabsProps> = ({
   onRegeneratePlatform,
   onSaveToLibrary,
   onGenerateMore,
+  onOpenVoiceTuner,
   isRegenerating = false,
 }) => {
   const platforms = output.platforms || [];
@@ -37,37 +39,37 @@ export const PlatformTabs: React.FC<PlatformTabsProps> = ({
         return {
           name: 'X (Twitter)',
           icon: '𝕏',
-          badge: output.x ? '1 Thread, 1 Post, 5 Hooks' : 'Available',
-          color: 'text-zinc-100',
+          badge: output.x ? 'Post & Thread' : 'Available',
+          color: 'text-[#f0f2f5]',
         };
       case 'linkedin':
         return {
           name: 'LinkedIn',
           icon: 'in',
-          badge: output.linkedin ? '3 Post Angles' : 'Available',
+          badge: output.linkedin ? 'Primary Post' : 'Available',
           color: 'text-[#0a66c2]',
         };
       case 'tiktok':
         return {
           name: 'TikTok / Reels',
           icon: '▶',
-          badge: output.tiktok ? '3 Video Scripts' : 'Available',
+          badge: output.tiktok ? 'Video Script' : 'Available',
           color: 'text-rose-400',
         };
       case 'instagram':
         return {
           name: 'Instagram',
           icon: '📸',
-          badge: output.instagram ? '1 Carousel, 2 Captions' : 'Available',
+          badge: output.instagram ? 'Caption & Carousel' : 'Available',
           color: 'text-amber-400',
         };
     }
   };
 
   return (
-    <div id="platform-tabs-container" className="space-y-6">
+    <div id="platform-tabs-container" className="space-y-4">
       {/* Platform Navigation Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-zinc-800/80">
+      <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-[#262b30]">
         <div className="flex items-center gap-2 overflow-x-auto pb-1 max-w-full">
           {platforms.map((platform) => {
             const meta = getPlatformMeta(platform);
@@ -77,15 +79,15 @@ export const PlatformTabs: React.FC<PlatformTabsProps> = ({
                 key={platform}
                 id={`platform-tab-${platform}`}
                 onClick={() => onSelectPlatform(platform)}
-                className={`flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap ${
+                className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all whitespace-nowrap cursor-pointer ${
                   isActive
-                    ? 'bg-zinc-800 text-white border border-indigo-500/50 shadow-md shadow-black/40 ring-1 ring-indigo-500/30'
-                    : 'bg-zinc-900/60 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-850 border border-zinc-800/80'
+                    ? 'bg-[#22272b] text-[#f0f2f5] border border-emerald-500/40 shadow-xs ring-1 ring-emerald-500/15'
+                    : 'bg-[#1d2125] text-[#9ba3af] hover:text-[#f0f2f5] hover:bg-[#22272b] border border-[#262b30]'
                 }`}
               >
                 <span className={`font-mono text-xs ${meta.color}`}>{meta.icon}</span>
                 <span>{meta.name}</span>
-                <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-zinc-800/90 text-zinc-400">
+                <span className="text-[10px] font-mono font-medium px-2 py-0.5 rounded-full bg-[#16191c] text-[#cbd2d9] border border-[#262b30]">
                   {meta.badge}
                 </span>
               </button>
@@ -97,10 +99,10 @@ export const PlatformTabs: React.FC<PlatformTabsProps> = ({
         <button
           id="generate-more-btn"
           onClick={onGenerateMore}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-indigo-300 bg-indigo-950/50 hover:bg-indigo-900/60 border border-indigo-500/40 hover:border-indigo-400 transition-all shadow-xs"
+          className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold text-[#cbd2d9] bg-[#22272b] hover:bg-[#282e34] hover:text-[#f0f2f5] border border-[#2e343b] transition-all cursor-pointer"
         >
-          <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
-          <span>Generate More</span>
+          <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+          <span>Regenerate Suite</span>
         </button>
       </div>
 
@@ -113,6 +115,7 @@ export const PlatformTabs: React.FC<PlatformTabsProps> = ({
             onCopy={onCopyText}
             onRegenerate={() => onRegeneratePlatform('x')}
             onSaveToLibrary={onSaveToLibrary}
+            onOpenVoiceTuner={() => onOpenVoiceTuner?.('x')}
             isRegenerating={isRegenerating}
           />
         )}
@@ -124,6 +127,7 @@ export const PlatformTabs: React.FC<PlatformTabsProps> = ({
             onCopy={onCopyText}
             onRegenerate={() => onRegeneratePlatform('linkedin')}
             onSaveToLibrary={onSaveToLibrary}
+            onOpenVoiceTuner={() => onOpenVoiceTuner?.('linkedin')}
             isRegenerating={isRegenerating}
           />
         )}
@@ -135,6 +139,7 @@ export const PlatformTabs: React.FC<PlatformTabsProps> = ({
             onCopy={onCopyText}
             onRegenerate={() => onRegeneratePlatform('tiktok')}
             onSaveToLibrary={onSaveToLibrary}
+            onOpenVoiceTuner={() => onOpenVoiceTuner?.('tiktok')}
             isRegenerating={isRegenerating}
           />
         )}
@@ -146,6 +151,7 @@ export const PlatformTabs: React.FC<PlatformTabsProps> = ({
             onCopy={onCopyText}
             onRegenerate={() => onRegeneratePlatform('instagram')}
             onSaveToLibrary={onSaveToLibrary}
+            onOpenVoiceTuner={() => onOpenVoiceTuner?.('instagram')}
             isRegenerating={isRegenerating}
           />
         )}

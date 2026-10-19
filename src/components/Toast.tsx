@@ -26,24 +26,24 @@ export const ToastContainer: React.FC<ToastProps> = ({ toasts, onDismiss }) => {
             initial={{ opacity: 0, y: 20, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.15 } }}
-            className={`pointer-events-auto flex items-center justify-between p-3.5 rounded-xl border shadow-xl backdrop-blur-md text-sm font-medium ${
+            className={`pointer-events-auto flex items-center justify-between p-3.5 rounded-xl border shadow-2xl backdrop-blur-md text-xs sm:text-sm font-medium ${
               toast.type === 'success'
-                ? 'bg-zinc-900/95 border-emerald-500/40 text-emerald-200'
+                ? 'bg-[#1d2125]/95 border-emerald-500/40 text-emerald-300'
                 : toast.type === 'error'
-                ? 'bg-zinc-900/95 border-rose-500/40 text-rose-200'
-                : 'bg-zinc-900/95 border-indigo-500/40 text-indigo-200'
+                ? 'bg-[#1d2125]/95 border-rose-500/40 text-rose-300'
+                : 'bg-[#1d2125]/95 border-emerald-500/30 text-[#f0f2f5]'
             }`}
           >
             <div className="flex items-center gap-2.5">
               {toast.type === 'success' && <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />}
               {toast.type === 'error' && <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />}
-              {toast.type === 'info' && <Info className="w-4 h-4 text-indigo-400 shrink-0" />}
+              {toast.type === 'info' && <Info className="w-4 h-4 text-emerald-400 shrink-0" />}
               <span>{toast.message}</span>
             </div>
             <button
               id={`dismiss-toast-${toast.id}`}
               onClick={() => onDismiss(toast.id)}
-              className="ml-3 p-1 rounded-md text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors"
+              className="ml-3 p-1 rounded-md text-[#9ba3af] hover:text-[#f0f2f5] hover:bg-[#22272b] transition-colors cursor-pointer"
             >
               <X className="w-3.5 h-3.5" />
             </button>

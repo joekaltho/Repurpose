@@ -5,17 +5,16 @@ export const SAMPLE_TEMPLATES: TemplatePrompt[] = [
     id: 'contrarian-insight',
     title: 'The Contrarian Lesson',
     category: 'Startup & Strategy',
-    description: 'Challenge common industry wisdom with hard-won experience and crisp arguments.',
+    description: 'Challenge common industry wisdom with clear arguments and focused principles.',
     suggestedStyle: 'Bold / Contrarian',
     suggestedTone: 'Direct, sharp, no-fluff',
     suggestedAudience: 'Founders, operators, and ambitious builders',
-    sampleInput: `Most startups fail not because their product is bad, but because they build for a phantom customer they wish existed rather than the desperate one who actually pays.
+    suggestedGoal: 'Spark debate',
+    sampleInput: `Most startups struggle not because their underlying technology is flawed, but because they focus on secondary features rather than one acute problem customers urgently need solved.
 
-We spent 9 months building an AI workflow optimizer. We had 40 user interviews where people said "this looks super cool, definitely keep me updated." When we asked for $49/mo, 39 of them ghosted.
+When you ask for feedback in broad, polite terms, people will usually give encouraging praise. But general encouragement rarely correlates with actual workflow adoption.
 
-The one customer who paid? A frantic logistics broker managing 14 spreadsheets who didn't care about our sleek UI or AI buzzwords. He cared that his team was losing 4 hours every Tuesday fixing shipment tracking mismatches. We stripped out 80% of our fancy features, rebuilt around his messy Excel problem, and grew to $45k MRR in 4 months.
-
-Polite feedback is the silent killer of early-stage companies. If someone isn't swearing about the problem or pulling out their card before the call ends, you are building a hobby, not a business.`
+The true test of customer need is whether someone has an active bottleneck so painful they are already attempting to fix it manually. If that friction does not exist, expanding the roadmap will not create demand.`
   },
   {
     id: 'engineering-framework',
@@ -25,57 +24,50 @@ Polite feedback is the silent killer of early-stage companies. If someone isn't 
     suggestedStyle: 'Educational',
     suggestedTone: 'Pragmatic, clear, authoritative',
     suggestedAudience: 'Software engineers, tech leads, and product teams',
-    sampleInput: `Our latency dropped by 74% and our AWS bill dropped by $3,200/month after one architectural rethink: stopping premature microservices and moving to an event-driven modular monolith.
+    suggestedGoal: 'Share engineering lessons',
+    sampleInput: `A guiding principle for backend architecture: premature microservices often introduce network and operational overhead before the team has organizational scale to justify it.
 
-Here is what went wrong before:
-1. Distributed transactions: We had 9 microservices talking over HTTP. One user checkout triggered 14 internal REST calls. If any single service had a blip, the whole cart failed.
-2. Debugging nightmare: Tracing a bug across 6 repo boundaries took 3 engineers half a day.
+Two common pitfalls when splitting services too early:
+1. Distributed transactions: Cascading synchronous HTTP calls between microservices increase latency and create single-point-of-failure chains.
+2. Debugging complexity: Tracing failures across independent services requires distributed tracing infrastructure that small teams often struggle to maintain.
 
-What we changed:
-- Unified the domain logic into a single deployment pipeline with strict internal domain boundaries.
-- Replaced synchronous inter-service HTTP hops with an internal in-memory pub/sub queue for non-critical side effects (receipt generation, analytics, notifications).
-- Cached database read models using lightweight Redis hashes keyed on tenant ID.
-
-Result: P99 latency plummeted from 1.8s to 180ms. Before splitting your backend into 20 services, ensure your actual bottleneck is organizational scale, not code architecture.`
+A simpler alternative:
+- Start with a modular monolith where domain boundaries are enforced in code.
+- Use internal in-memory queues or asynchronous message workers for background tasks.
+- Only break out a service when team ownership or distinct scaling profiles require it.`
   },
   {
     id: 'founder-vulnerability',
-    title: 'The Raw Origin Story',
+    title: 'Early Stage Reflection',
     category: 'Personal & Founder',
-    description: 'A vulnerable, authentic narrative about overcoming a major obstacle or turning point.',
+    description: 'An honest reflection on the early-stage challenge of discovering genuine customer pain.',
     suggestedStyle: 'Storytelling',
     suggestedTone: 'Honest, grounded, reflective',
-    suggestedAudience: 'Creators, solo-entrepreneurs, early-stage founders',
-    sampleInput: `Three years ago I was 28, sitting in a rented car in a retail parking lot with $1,400 left to my name and our third pitch rejected in a row.
+    suggestedAudience: 'Early-stage founders, indie builders, solo developers',
+    suggestedGoal: 'Document journey',
+    sampleInput: `The hardest part of building early is having the patience to listen deeply before building solutions.
 
-My co-founder and I had quit steady corporate jobs to build a marketplace. For 11 months, we tracked vanity metrics—registered users who never opened a second email, social media impressions, and coffee chats with mentors who had never built a marketplace.
+It is very tempting to stay inside the codebase where everything is predictable and controllable. Talking to potential users and hearing genuine ambivalence can be uncomfortable.
 
-That afternoon we made a pact: stop trying to look like a venture-backed tech company and start acting like a service company that actually solves one urgent pain point. We picked up the phone, called 50 local HVAC contractors, and asked: "What is the single most annoying manual task you have to do tonight after 7 PM?"
-
-Thirty-four answered: writing follow-up quotes for emergency weekend calls. We manually wrote quotes for them that evening via SMS. That became our MVP. No code, just raw customer relief.
-
-You don't need permission or funding to be useful. You just need to care more about their problem than your ego.`
+The core realization: building software is easy compared to finding an acute problem that people genuinely care about solving. Prioritizing problem discovery over feature velocity is the hardest discipline in a startup.`
   },
   {
     id: 'tactical-playbook',
-    title: 'The Tactical 5-Step Playbook',
+    title: 'The Tactical Playbook',
     category: 'Marketing & Growth',
-    description: 'High-density, step-by-step tactics that readers immediately want to bookmark.',
+    description: 'High-density, step-by-step framework that readers immediately want to bookmark.',
     suggestedStyle: 'Founder',
     suggestedTone: 'Punchy, actionable, high signal',
-    suggestedAudience: 'Growth marketers, B2B founders, agency owners',
-    sampleInput: `How we generated our first 100 B2B customers without spending a dollar on paid ads:
+    suggestedAudience: 'Founders, technical marketers, product leads',
+    suggestedGoal: 'Build in public',
+    sampleInput: `A straightforward 4-step framework for early customer discovery:
 
-Step 1: The Lurker Audit. Find 10 active Slack, Discord, or Reddit communities where your target users ask questions. Don't pitch. Spend 14 days solely answering technical questions with deep, exhaustive answers.
+Step 1: Identify Where the Problem Lives. Observe community forums, issue trackers, and discussions where practitioners complain about daily friction.
 
-Step 2: The Free Tool Teardown. Build one tiny, single-purpose calculator or free diagnostic tool that solves 5% of their problem. Give it away without an email gate.
+Step 2: Study Current Workarounds. Look at what spreadsheets, manual scripts, or duct-tape processes people use today. If no workaround exists, the problem may not be urgent enough.
 
-Step 3: Direct Value Outreach. When someone shares a problem in public, record a 90-second customized Loom video showing how to fix it immediately. Send it with zero sales pitch.
+Step 3: Ask Concrete Questions. Ask about the last time they experienced the issue and what it cost them in time or money, rather than whether they like your hypothetical solution.
 
-Step 4: The Public Build Log. Share the actual metrics, mistakes, and customer quotes every Friday. Authentic struggles attract better buyers than manufactured success.
-
-Step 5: Frictionless Conversion. When they ask "can you just do this for us?", offer a 14-day trial with a 100% money-back guarantee.
-
-Consistency beats cleverness every single time.`
+Step 4: Build for the Bottleneck. Deliver the simplest functional utility that relieves that specific friction before designing secondary features.`
   }
 ];
