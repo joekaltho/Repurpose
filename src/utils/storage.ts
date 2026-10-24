@@ -38,7 +38,7 @@ export const INITIAL_FOUNDER_VOICE_PROFILE: VoiceProfile = {
   name: 'Default Builder Voice',
   founderName: '',
   role: 'Founder & Builder',
-  bio: 'Technical founder building software and sharing practical lessons.',
+  bio: '',
   startupName: '',
   startupOneLiner: '',
   targetAudience: 'Software engineers, tech leads, CTOs, and builders',
@@ -62,24 +62,8 @@ export const INITIAL_FOUNDER_VOICE_PROFILE: VoiceProfile = {
     'let\'s dive in',
     'at the end of the day',
   ],
-  writingSamples: [
-    `Technical decisions should be driven by immediate bottlenecks rather than hypothetical future scale. Simplicity scales much further than most teams anticipate.`,
-    `High-signal communication requires stripping away jargon and clearly identifying the primary tradeoff. If an idea cannot be stated directly in two sentences, the underlying reasoning is not clear yet.`,
-  ],
-  learnedAdjustments: [
-    {
-      id: 'adj_1',
-      date: new Date(Date.now() - 86400000 * 2).toISOString(),
-      feedback: 'Keep sentences punchy and avoid filler introductory clauses.',
-      active: true,
-    },
-    {
-      id: 'adj_2',
-      date: new Date(Date.now() - 86400000).toISOString(),
-      feedback: 'Never use generic hype emojis in hooks or thread openings.',
-      active: true,
-    },
-  ],
+  writingSamples: [],
+  learnedAdjustments: [],
   isDefault: true,
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
@@ -100,18 +84,25 @@ export function getVoiceProfiles(): VoiceProfile[] {
       return [INITIAL_FOUNDER_VOICE_PROFILE];
     }
     // Cleanse legacy default profile if it had fake Mercer / VeloceDB or polite compliments writing samples
+    // Remove legacy seeded fake data without overwriting anything the user wrote.
     parsed = parsed.map((p) => {
-      if (p.id === 'profile_default_founder') {
-        return {
-          ...p,
-          founderName: p.founderName === 'Alex Mercer' ? '' : p.founderName,
-          startupName: p.startupName === 'VeloceDB' ? '' : p.startupName,
-          startupOneLiner: p.startupName === 'VeloceDB' ? '' : p.startupOneLiner,
-          name: 'Default Builder Voice',
-          writingSamples: INITIAL_FOUNDER_VOICE_PROFILE.writingSamples,
-        };
-      }
-      return p;
+      if (p.id !== 'profile_default_founder') return p;
+      const legacyIdentity = p.founderName === 'Alex Mercer' || p.startupName === 'VeloceDB';
+      return {
+        ...p,
+        founderName: p.founderName === 'Alex Mercer' ? '' : p.founderName,
+        startupName: p.startupName === 'VeloceDB' ? '' : p.startupName,
+        startupOneLiner: p.startupName === 'VeloceDB' ? '' : p.startupOneLiner,
+        name: legacyIdentity ? 'Default Builder Voice' : p.name,
+        writingSamples: (p.writingSamples || []).filter(
+          (s) =>
+            !s.startsWith('Technical decisions should be driven by immediate bottlenecks') &&
+            !s.startsWith('High-signal communication requires stripping')
+        ),
+        learnedAdjustments: (p.learnedAdjustments || []).filter(
+          (a) => a.id !== 'adj_1' && a.id !== 'adj_2'
+        ),
+      };
     });
     localStorage.setItem(VOICE_PROFILES_KEY, JSON.stringify(parsed));
     return parsed;

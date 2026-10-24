@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { validateContentGrounding } from '../utils/sourceGrounding';
 import {
   Sparkles,
   Link2,
@@ -277,7 +278,7 @@ export const CreateView: React.FC<CreateViewProps> = ({
         body: JSON.stringify({
           sourceContent,
           inputType,
-          platforms: selectedPlatforms,
+          platforms: isRegen && regeneratePlatform ? [regeneratePlatform] : selectedPlatforms,
           style,
           targetAudience,
           desiredTone,
@@ -308,7 +309,15 @@ export const CreateView: React.FC<CreateViewProps> = ({
       );
       onRefreshCredits();
 
-      onUpdateOutput(data);
+      let nextOutput = data;
+      if (isRegen && regeneratePlatform && currentOutput) {
+        const merged: any = { ...currentOutput, [regeneratePlatform]: data[regeneratePlatform] };
+        nextOutput = {
+          ...merged,
+          sourceGrounding: validateContentGrounding(merged.sourceContent, activeVoiceProfile, merged),
+        };
+      }
+      onUpdateOutput(nextOutput);
       if (!selectedPlatforms.includes(activePlatformTab)) {
         setActivePlatformTab(selectedPlatforms[0] || 'x');
       }

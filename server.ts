@@ -312,6 +312,7 @@ app.post("/api/repurpose", async (req, res) => {
 
     const writingSamples = voiceProfile?.writingSamples || [];
 
+    let generationFailed = false;
     if (ai) {
       try {
         const systemPrompt = `You are an elite editorial ghostwriter and content repurposing strategist exclusively for technical founders, indie hackers, and startup CEOs.
@@ -497,36 +498,19 @@ Do NOT invent customer interviews (e.g. "interviewed 40 people"), ghosting count
           creditUsage,
         });
       } catch (geminiError: any) {
-        console.error("Gemini generation failed, falling back to smart engine:", geminiError);
+        console.error("Gemini generation failed:", geminiError);
+        generationFailed = true;
       }
     }
 
-    // High quality intelligent fallback engine (runs if API key is not present or if an error occurred)
-    const generatedFallback = generateSmartRepurpose(
-      sourceContent,
-      inputType,
-      platforms,
-      style,
-      targetAudience,
-      desiredTone,
-      callToAction,
-      preserveVoice,
-      voiceProfile,
-      contentGoal
-    );
-
-    const creditUsage = {
-      operation: isRegeneration ? "platform_regenerate" : "repurpose",
-      cost: requiredCredits,
-      description: isRegeneration
-        ? `Regenerated ${String(regeneratePlatform).toUpperCase()}`
-        : `Repurposed across ${platforms.length} platform${platforms.length > 1 ? "s" : ""} (${platforms.join(", ").toUpperCase()})`,
-      requestId,
-    };
-
-    return res.json({
-      ...generatedFallback,
-      creditUsage,
+    // No templated fallback: it produced generic text and still charged credits.
+    // Fail honestly instead; the client only deducts credits on success.
+    return res.status(503).json({
+      error: !ai
+        ? "Generation is not configured on this server (missing GEMINI_API_KEY)."
+        : generationFailed
+        ? "Generation failed. You were not charged. Please try again."
+        : "No content was generated. You were not charged.",
     });
   } catch (err: any) {
     console.error("Repurpose route error:", err);
